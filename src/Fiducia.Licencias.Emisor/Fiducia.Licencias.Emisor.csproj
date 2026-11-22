@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Herramienta del proveedor para generar las claves y emitir/renovar las licencias de Fiducia. Usa la misma biblioteca
+    que verifica las licencias en el sistema (externo/Fiducia, submodulo fijado a un commit): el formato firmado no se
+    duplica.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>fiducia-licencias</AssemblyName>
+    <RootNamespace>Fiducia.Licencias.Emisor</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Fiducia.Licencias.Emisor.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\externo\Fiducia\src\BuildingBlocks\Fiducia.BuildingBlocks.Licencias\Fiducia.BuildingBlocks.Licencias.csproj" />
+  </ItemGroup>
+
+</Project>

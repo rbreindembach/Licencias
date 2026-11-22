@@ -1,0 +1,16 @@
+# Compilacion
+bin/
+obj/
+.vs/
+.idea/
+.vscode/
+*.user
+TestResults/
+
+# NUNCA versionar claves ni licencias emitidas (datos de clientes). La clave privada vive fuera del repo
+# (FIDUCIA_LICENCIAS_CARPETA, por defecto ~/.fiducia/licencias) o en un Key Vault.
+*.pem
+*.key
+*.pfx
+emitidas/
+registro.csv

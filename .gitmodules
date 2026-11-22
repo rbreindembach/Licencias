@@ -1,0 +1,3 @@
+[submodule "externo/Fiducia"]
+	path = externo/Fiducia
+	url = https://github.com/rbreindembach/Fiducia.git
