@@ -8,7 +8,7 @@ namespace Fiducia.Licencias.Emisor;
 /// Registro de las licencias emitidas (<c>registro.csv</c> en la carpeta de trabajo, fuera del repo): numera los Id
 /// (LIC-AAAA-NNNN por año de inicio de vigencia) y evita repetir uno, que el sistema rechazaria al cargarlo.
 /// </summary>
-internal sealed class RegistroEmisiones(string archivo)
+internal sealed class RegistroEmisiones(string archivo, string prefijoId = "LIC")
 {
     private const string Encabezado = "Id;Cliente;Rif;Dominios;Desde;Hasta;Ambiente;MesesGracia;Emitida;Archivo";
 
@@ -19,10 +19,10 @@ internal sealed class RegistroEmisiones(string archivo)
 
     public bool Existe(string id) => Ids().Contains(id, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>El siguiente Id libre para el año: LIC-2027-0001, LIC-2027-0002...</summary>
+    /// <summary>El siguiente Id libre para el año: LIC-2027-0001, LIC-2027-0002... (CAJA-2027-0001 en Caja 2000).</summary>
     public string SiguienteId(int anio)
     {
-        var prefijo = $"LIC-{anio}-";
+        var prefijo = $"{prefijoId}-{anio}-";
         var ultimo = Ids()
             .Where(id => id.StartsWith(prefijo, StringComparison.OrdinalIgnoreCase))
             .Select(id => int.TryParse(id[prefijo.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0)

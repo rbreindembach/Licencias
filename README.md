@@ -1,8 +1,35 @@
-# Licencias de Fiducia
+# Licencias de Fiducia y Caja 2000
 
-Herramienta del proveedor para generar las claves de firma y emitir o renovar las licencias anuales del sistema
-Fiducia. Las reglas de la licencia (gracia, período de prueba, solo lectura, ambiente) están en el `CLAUDE.md` de
-Fiducia, sección "Licencia anual y modo solo lectura".
+Herramienta del proveedor para generar las claves de firma y emitir o renovar las licencias anuales de los sistemas
+Fiducia y Caja 2000 (caja de ahorros). Las reglas de la licencia (gracia, período de prueba, solo lectura, ambiente)
+son las mismas en los dos y están en el `CLAUDE.md` de cada uno (Fiducia: "Licencia anual y modo solo lectura"; Caja
+2000: "Annual license, read-only mode, terms of use and test environment").
+
+## Producto: `--producto fiducia|caja`
+
+Todos los comandos aceptan `--producto` (por defecto `fiducia`, así los usos de antes no cambian). Los dos sistemas usan
+**el mismo formato de archivo** (Caja 2000 tiene una copia idéntica de la biblioteca en `Caja.Shared.Licencias`); lo
+que impide que una licencia de un producto sirva en el otro es la **clave**: cada sistema compila solo sus propias
+claves públicas. Por eso cada producto tiene:
+
+| | Fiducia | Caja 2000 (`--producto caja`) |
+|---|---|---|
+| Carpeta de trabajo | `~/.fiducia/licencias` o `FIDUCIA_LICENCIAS_CARPETA` | `~/.caja/licencias` o `CAJA_LICENCIAS_CARPETA` |
+| Clave privada | `--clave` o `FIDUCIA_LICENCIAS_CLAVE` | `--clave` o `CAJA_LICENCIAS_CLAVE` |
+| Ids | `LIC-AAAA-NNNN` | `CAJA-AAAA-NNNN` |
+| Dónde va la clave pública | `src/Host/Fiducia.Api/Licenciamiento/ClavesProveedor.cs` | `src/Shared/Caja.Shared.Licenciamiento/ClavesProveedor.cs` |
+| Dominio | host de Fiducia.Api | host público de la instalación (`localhost` en una instalación local) |
+| Clave vigente | 2026, huella `83:82:2f:29:...` | caja-2026, huella `19:f1:b9:c9:b9:01:e1:2b:4d:b9:76:56:d3:24:0f:29` |
+
+```bash
+fiducia-licencias emitir --producto caja \
+  --cliente "Caja de Ahorros Ejemplo" --rif J-12345678-9 \
+  --dominio caja.ejemplo.com --desde 2026-12-01 --ambiente produccion
+```
+
+La caja carga la licencia en **Seguridad > Licencia** (permiso `licencia.administrar`). Si cambia el formato del archivo
+(`ArchivoLicencia.Formato`), hay que cambiarlo en las dos bibliotecas (la de Fiducia, que usa este emisor, y la copia de
+Caja 2000) y actualizar el submódulo.
 
 > **La clave privada nunca entra a este repositorio** (ni a ningún otro). Con ella cualquiera puede emitir licencias.
 > El `.gitignore` excluye `*.pem`, `emitidas/` y `registro.csv`, pero la regla es no copiarla aquí.

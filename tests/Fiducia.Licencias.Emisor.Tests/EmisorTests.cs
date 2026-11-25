@@ -345,4 +345,45 @@ public sealed class EmisorTests : IDisposable
         Assert.Equal(1, codigo);
         Assert.Contains("generar-claves", _salida.ToString());
     }
+
+    // --- producto caja ---
+
+    private int CorrerCaja(string carpetaCaja, params string[] args) =>
+        new Emisor(new Entorno(_carpeta, _ => null, Hoy, carpetaCaja), _salida).Ejecutar(args);
+
+    [Fact]
+    public void Caja_usa_su_propia_carpeta_y_prefijo_de_id()
+    {
+        // Arrange
+        var carpetaCaja = Ruta("caja");
+        Assert.Equal(0, CorrerCaja(carpetaCaja, "generar-claves", "--producto", "caja", "--nombre", "caja"));
+        var clave = Path.Combine(carpetaCaja, "caja-privada.pem");
+
+        // Act
+        var codigo = CorrerCaja(carpetaCaja,
+            "emitir", "--producto", "caja", "--cliente", "Caja de Ahorros Uno", "--rif", "J-22222222-2", "--dominio", "localhost",
+            "--desde", "2026-12-01", "--ambiente", "pruebas", "--clave", clave);
+
+        // Assert
+        Assert.Equal(0, codigo);
+        var archivo = Path.Combine(carpetaCaja, "emitidas", "CAJA-2026-0001.json");
+        var licencia = Leer(archivo, Path.Combine(carpetaCaja, "caja-publica.pem"));
+        Assert.Equal("CAJA-2026-0001", licencia.Id);
+        Assert.Equal(AmbienteLicencia.Pruebas, licencia.Ambiente);
+        Assert.Contains("Caja 2000", _salida.ToString());
+        Assert.False(File.Exists(Ruta("registro.csv")));
+    }
+
+    [Fact]
+    public void Un_producto_desconocido_es_un_error()
+    {
+        // Arrange (carpeta vacia)
+
+        // Act
+        var codigo = Correr("generar-claves", "--producto", "otro");
+
+        // Assert
+        Assert.Equal(1, codigo);
+        Assert.Contains("--producto", _salida.ToString());
+    }
 }

@@ -7,15 +7,47 @@ namespace Fiducia.Licencias.Emisor;
 /// Donde trabaja el emisor: carpeta de trabajo (registro y licencias emitidas), variables de entorno y la fecha de hoy.
 /// Separado para poder probar los comandos sin tocar la maquina.
 /// </summary>
-internal sealed record Entorno(string CarpetaPorDefecto, Func<string, string?> Variable, DateOnly Hoy)
+internal sealed record Entorno(
+    string CarpetaPorDefecto, Func<string, string?> Variable, DateOnly Hoy, string? CarpetaPorDefectoCaja = null)
 {
     public const string VariableCarpeta = "FIDUCIA_LICENCIAS_CARPETA";
     public const string VariableClave = "FIDUCIA_LICENCIAS_CLAVE";
 
-    public static Entorno DelSistema() => new(
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".fiducia", "licencias"),
-        Environment.GetEnvironmentVariable,
-        DateOnly.FromDateTime(DateTime.Today));
+    public static Entorno DelSistema()
+    {
+        var perfil = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return new(
+            Path.Combine(perfil, ".fiducia", "licencias"),
+            Environment.GetEnvironmentVariable,
+            DateOnly.FromDateTime(DateTime.Today),
+            Path.Combine(perfil, ".caja", "licencias"));
+    }
+}
+
+/// <summary>
+/// Para que sistema se emite. Los dos usan el mismo formato de archivo (la biblioteca de Fiducia; Caja 2000 tiene una
+/// copia identica en Caja.Shared.Licencias), asi que lo que separa una licencia de otra es la CLAVE: cada sistema solo
+/// acepta las claves publicas compiladas en el, y cada producto tiene su par, su carpeta de trabajo (registro y
+/// emitidas) y su prefijo de Id.
+/// </summary>
+internal sealed record Producto(
+    string Codigo, string Nombre, string PrefijoId, string VariableCarpeta, string VariableClave,
+    string DondeVaLaClavePublica)
+{
+    public static readonly Producto Fiducia = new(
+        "fiducia", "Fiducia", "LIC", Entorno.VariableCarpeta, Entorno.VariableClave,
+        "ClavesProveedor.Publicas en Fiducia (src/Host/Fiducia.Api/Licenciamiento/)");
+
+    public static readonly Producto Caja = new(
+        "caja", "Caja 2000", "CAJA", "CAJA_LICENCIAS_CARPETA", "CAJA_LICENCIAS_CLAVE",
+        "ClavesProveedor.Publicas en Caja 2000 (src/Shared/Caja.Shared.Licenciamiento/ClavesProveedor.cs)");
+
+    public static Producto? Buscar(string? codigo) => (codigo?.Trim().ToLowerInvariant()) switch
+    {
+        null or "" or "fiducia" => Fiducia,
+        "caja" or "caja2000" => Caja,
+        _ => null,
+    };
 }
 
 /// <summary>
@@ -26,12 +58,14 @@ internal sealed class Emisor(Entorno entorno, TextWriter salida)
 {
     private const int GraciaPorDefecto = 3;
 
+    private Producto _producto = Producto.Fiducia;
+
     private static readonly Dictionary<string, string[]> OpcionesValidas = new()
     {
-        ["generar-claves"] = ["nombre", "carpeta"],
-        ["emitir"] = ["cliente", "rif", "dominio", "desde", "hasta", "ambiente", "gracia", "id", "salida", "clave", "carpeta"],
-        ["renovar"] = ["anterior", "dominio", "gracia", "id", "salida", "clave", "carpeta"],
-        ["ver"] = ["clave-publica", "clave"],
+        ["generar-claves"] = ["nombre", "carpeta", "producto"],
+        ["emitir"] = ["cliente", "rif", "dominio", "desde", "hasta", "ambiente", "gracia", "id", "salida", "clave", "carpeta", "producto"],
+        ["renovar"] = ["anterior", "dominio", "gracia", "id", "salida", "clave", "carpeta", "producto"],
+        ["ver"] = ["clave-publica", "clave", "producto"],
     };
 
     public int Ejecutar(IReadOnlyList<string> args)
@@ -59,6 +93,12 @@ internal sealed class Emisor(Entorno entorno, TextWriter salida)
             return Fallar($"Opción desconocida para {argumentos.Comando}: --{desconocida}.");
         }
 
+        if (Producto.Buscar(argumentos.Opcion("producto")) is not { } producto)
+        {
+            return Fallar($"--producto tiene que ser fiducia o caja (recibido \"{argumentos.Opcion("producto")}\").");
+        }
+
+        _producto = producto;
         return argumentos.Comando switch
         {
             "generar-claves" => GenerarClaves(argumentos),
@@ -90,7 +130,7 @@ internal sealed class Emisor(Entorno entorno, TextWriter salida)
         salida.WriteLine($"Clave pública: {publica}");
         salida.WriteLine($"Huella:        {Claves.Huella(pemPublica)}");
         salida.WriteLine();
-        salida.WriteLine("Agregue esta clave pública a ClavesProveedor.Publicas en Fiducia (src/Host/Fiducia.Api/Licenciamiento/):");
+        salida.WriteLine($"Agregue esta clave pública a {_producto.DondeVaLaClavePublica}:");
         salida.WriteLine(pemPublica);
         salida.WriteLine("Guarde la clave privada en custodia (Key Vault, bóveda) y no la copie a ningún repositorio.");
         return 0;
@@ -258,7 +298,7 @@ internal sealed class Emisor(Entorno entorno, TextWriter salida)
         }
 
         var carpeta = Carpeta(a);
-        var registro = new RegistroEmisiones(Path.Combine(carpeta, "registro.csv"));
+        var registro = new RegistroEmisiones(Path.Combine(carpeta, "registro.csv"), _producto.PrefijoId);
         var id = a.Opcion("id")?.Trim() ?? registro.SiguienteId(desde.Year);
         if (registro.Existe(id))
         {
@@ -299,6 +339,7 @@ internal sealed class Emisor(Entorno entorno, TextWriter salida)
 
     private void Describir(Licencia l, string publica)
     {
+        salida.WriteLine($"  Producto:         {_producto.Nombre}");
         salida.WriteLine($"  Id:               {l.Id}");
         salida.WriteLine($"  Cliente:          {l.Cliente} ({l.Rif})");
         salida.WriteLine($"  Dominios:         {string.Join(", ", l.Dominios)}");
@@ -309,16 +350,20 @@ internal sealed class Emisor(Entorno entorno, TextWriter salida)
         salida.WriteLine($"  Huella de clave:  {Claves.Huella(publica)}");
     }
 
+    /// <summary>Carpeta de trabajo: --carpeta, la variable del producto o la carpeta por defecto del producto.</summary>
     private string Carpeta(Argumentos a) =>
-        a.Opcion("carpeta") ?? entorno.Variable(Entorno.VariableCarpeta) ?? entorno.CarpetaPorDefecto;
+        a.Opcion("carpeta") ?? entorno.Variable(_producto.VariableCarpeta) ??
+        (_producto == Producto.Caja
+            ? entorno.CarpetaPorDefectoCaja ?? Path.Combine(entorno.CarpetaPorDefecto, "caja")
+            : entorno.CarpetaPorDefecto);
 
-    /// <summary>La clave privada de --clave o de FIDUCIA_LICENCIAS_CLAVE (ruta al PEM), con su publica.</summary>
+    /// <summary>La clave privada de --clave o de la variable del producto (ruta al PEM), con su publica.</summary>
     private (string Privada, string Publica)? LeerClavePrivada(Argumentos a)
     {
-        var ruta = a.Opcion("clave") ?? entorno.Variable(Entorno.VariableClave);
+        var ruta = a.Opcion("clave") ?? entorno.Variable(_producto.VariableClave);
         if (string.IsNullOrWhiteSpace(ruta))
         {
-            Fallar($"Indique la clave privada con --clave <archivo.pem> o la variable {Entorno.VariableClave}.");
+            Fallar($"Indique la clave privada con --clave <archivo.pem> o la variable {_producto.VariableClave}.");
             return null;
         }
 
@@ -410,10 +455,13 @@ internal sealed class Emisor(Entorno entorno, TextWriter salida)
     }
 
     private void Ayuda() => salida.WriteLine($$"""
-        fiducia-licencias: claves y licencias anuales de Fiducia.
+        fiducia-licencias: claves y licencias anuales de Fiducia y de Caja 2000.
+
+          Todos los comandos aceptan --producto fiducia|caja (por defecto fiducia). Cada producto tiene su propio par de
+          claves, su carpeta de trabajo y su prefijo de Id (LIC-AAAA-NNNN / CAJA-AAAA-NNNN).
 
           generar-claves [--nombre clave-AAAA] [--carpeta <dir>]
-              Genera un par EC P-256. La pública se agrega a ClavesProveedor en Fiducia; la privada va a custodia.
+              Genera un par EC P-256. La pública se agrega a ClavesProveedor del sistema; la privada va a custodia.
 
           emitir --cliente <razón social> --rif <J-...> --dominio <host> [--dominio <host>...]
                  --desde AAAA-MM-DD [--hasta AAAA-MM-DD] --ambiente produccion|pruebas [--gracia 3]
@@ -427,9 +475,11 @@ internal sealed class Emisor(Entorno entorno, TextWriter salida)
           ver <licencia.json> [--clave-publica <publica.pem> | --clave <privada.pem>]
               Verifica la firma y muestra el contenido.
 
-        El dominio es el host de Fiducia.Api (p.ej. fiduciaapi.cliente.com), sin https:// ni puerto.
-        Carpeta de trabajo (registro.csv y emitidas/): --carpeta, {{Entorno.VariableCarpeta}} o ~/.fiducia/licencias.
-        Clave privada: --clave o {{Entorno.VariableClave}} (ruta al PEM).
+        El dominio es, en Fiducia, el host de Fiducia.Api (p.ej. fiduciaapi.cliente.com); en Caja 2000, el host público
+        de la instalación (p.ej. caja.cliente.com, o localhost en una instalación local). Sin https:// ni puerto.
+        Carpeta de trabajo (registro.csv y emitidas/): --carpeta, {{Entorno.VariableCarpeta}} / CAJA_LICENCIAS_CARPETA,
+        o ~/.fiducia/licencias / ~/.caja/licencias.
+        Clave privada: --clave o {{Entorno.VariableClave}} / CAJA_LICENCIAS_CLAVE (ruta al PEM).
         """);
 
     private static void EscribirPrivada(string ruta, string pem)
